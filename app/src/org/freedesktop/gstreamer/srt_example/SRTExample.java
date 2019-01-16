@@ -1,6 +1,7 @@
 package org.freedesktop.gstreamer.srt_example;
 
 import android.app.Activity;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
@@ -12,8 +13,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.freedesktop.gstreamer.GStreamer;
+import org.freedesktop.gstreamer.srt_example.NsdHelper;
+import org.freedesktop.gstreamer.srt_example.SRTConnection;
 
 public class SRTExample extends Activity implements SurfaceHolder.Callback {
+    NsdHelper mNsdHelper;
+    SRTConnection mConnection;
     private native void nativeInit();     // Initialize native code, build pipeline, etc
     private native void nativeFinalize(); // Destroy pipeline and shutdown native code
     private native void nativePlay();     // Set pipeline to PLAYING
@@ -73,7 +78,18 @@ public class SRTExample extends Activity implements SurfaceHolder.Callback {
         // Start with disabled buttons, until native code is initialized
         this.findViewById(R.id.button_play).setEnabled(false);
         this.findViewById(R.id.button_stop).setEnabled(false);
-
+/*
+        mNsdHelper = new NsdHelper(this);
+        mNsdHelper.initializeNsd();
+        */
+/*
+        // Register service
+        if(mConnection.getLocalPort() > -1) {
+            mNsdHelper.registerService(mConnection.getLocalPort());
+        } else {
+            Log.d("GStreamer", "ServerSocket isn't bound.");
+        }
+*/
         nativeInit();
     }
 
@@ -82,9 +98,44 @@ public class SRTExample extends Activity implements SurfaceHolder.Callback {
         outState.putBoolean("playing", is_playing_desired);
     }
 
+    // For KitKat and earlier releases, it is necessary to remove the
+    // service registration when the application is stopped.  There's
+    // no guarantee that the onDestroy() method will be called (we're
+    // killable after onStop() returns) and the NSD service won't remove
+    // the registration for us if we're killed.
+    // In L and later, NsdService will automatically unregister us when
+    // our connection goes away when we're killed, so this step is
+    // optional (but recommended).
+    protected void onStop() {
+        Log.d("SRTExample", "Being stopped.");
+        mNsdHelper.tearDown();
+        mConnection.tearDown();
+        mNsdHelper = null;
+        mConnection = null;
+        super.onStop();
+    }
+
     protected void onDestroy() {
+        Log.d("SRTExaple", "Being destroyed.");
+        mNsdHelper.tearDown();
+        mConnection.tearDown();
         nativeFinalize();
         super.onDestroy();
+    }
+
+    protected void onPause() {
+        if (mNsdHelper != null) {
+            mNsdHelper.tearDown();
+        }
+        super.onPause();
+    }
+
+    protected void onResume() {
+        super.onResume();
+        if (mNsdHelper != null) {
+            mNsdHelper.registerService(mConnection.getLocalPort());
+            mNsdHelper.discoverServices();
+        }
     }
 
     // Called from native code. This sets the content of the TextView from the UI thread.
